@@ -14,9 +14,6 @@ class ComicsResponse(
 class PaginationDto(
     @SerialName("current_page")
     val currentPage: Int = 1,
-    val limit: Int = 0,
-    @SerialName("total_comics")
-    val totalComics: Int = 0,
     @SerialName("total_pages")
     val totalPages: Int = 1,
 )
@@ -47,19 +44,11 @@ class ChapterDto(
     val createdAt: String? = null,
     @SerialName("is_free")
     val isFree: Boolean? = null,
-    @SerialName("unlock_cost")
-    val unlockCost: Int? = null,
 )
 
 @Serializable
 class ChapterPageResponse(
-    @SerialName("chapter_name")
-    val chapterName: String? = null,
-    @SerialName("comic_name")
-    val comicName: String? = null,
     val images: List<String> = emptyList(),
     @SerialName("is_free")
     val isFree: Boolean? = null,
-    @SerialName("unlock_cost")
-    val unlockCost: Int? = null,
 )
