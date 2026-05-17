@@ -2,8 +2,10 @@ package tasks
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
+import org.gradle.api.file.ConfigurableFileCollection
 import org.gradle.api.file.ProjectLayout
 import org.gradle.api.file.RegularFileProperty
+import org.gradle.api.tasks.CompileClasspath
 import org.gradle.api.tasks.InputFile
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.OutputFile
@@ -23,6 +25,9 @@ abstract class DexPluginTask : DefaultTask() {
 
     @get:OutputFile
     abstract val outputJar: RegularFileProperty
+
+    @get:CompileClasspath
+    abstract val classpath: ConfigurableFileCollection
 
     @get:Inject
     abstract val execOperations: ExecOperations
@@ -63,6 +68,12 @@ abstract class DexPluginTask : DefaultTask() {
             throw GradleException("d8 executable not found at ${d8Executable.absolutePath}")
         }
 
+        val platformsDir = File(sdkDir, "platforms")
+        val latestPlatform = platformsDir.listFiles()
+            ?.filter { it.isDirectory && File(it, "android.jar").exists() }
+            ?.maxByOrNull { it.name }
+        val androidJar = latestPlatform?.let { File(it, "android.jar") }
+
         val tempDir = layout.buildDirectory.dir("tmp/dex").get().asFile.apply {
             deleteRecursively()
             mkdirs()
@@ -70,9 +81,22 @@ abstract class DexPluginTask : DefaultTask() {
 
         val inputJarFile = inputJar.get().asFile
         val outputJarFile = outputJar.get().asFile
+        val d8Args = mutableListOf(
+            d8Executable.absolutePath,
+            "--release",
+            "--min-api", "21",
+            "--output", tempDir.absolutePath,
+        )
+        if (androidJar != null) {
+            d8Args += listOf("--lib", androidJar.absolutePath)
+        }
+        classpath.files.filter { it.exists() }.forEach { jar ->
+            d8Args += listOf("--classpath", jar.absolutePath)
+        }
+        d8Args += inputJarFile.absolutePath
 
         execOperations.exec {
-            commandLine(d8Executable.absolutePath, "--release", "--output", tempDir.absolutePath, inputJarFile.absolutePath)
+            commandLine(d8Args)
         }
 
         val dexFiles = tempDir.listFiles { _, name -> name.endsWith(".dex") } ?: emptyArray()

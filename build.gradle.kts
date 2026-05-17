@@ -83,6 +83,7 @@ tasks.register<DexPluginTask>("dexJar") {
     dependsOn(tasks.jar)
     inputJar.set(tasks.jar.flatMap { it.archiveFile })
     outputJar.set(layout.projectDirectory.file("build/libs/plugin.jar"))
+    classpath.from(configurations.runtimeClasspath)
 }
 
 tasks.register<ReportGenerateTask>("generateTestsReport")
