@@ -14,12 +14,12 @@ This template project provides a collection of utilities and some parsers for co
 
     On Linux & Unix system:
 	```bash
-	chmod +x gradlew && ./gradlew jar
+	chmod +x gradlew && ./gradlew buildJar
  	```
 
     On Windows system:
     ```cmd
-    .\gradlew.bat jar
+    .\gradlew.bat buildJar
     ```
 
 2. Dex it with d8 after building:
@@ -32,9 +32,8 @@ This template project provides a collection of utilities and some parsers for co
 
 ## Credits
 
-- Thanks to HOLOLIVE for providing free content on their official website.
-- Thanks to [KotatsuApp](https://github.com/KotatsuApp) for providing HoloEarth parser and the core library.
-- Thanks to [Keiyoushi](https://github.com/Keiyoushi) for providing Holonometria extensions code on GitHub.
+- Thanks to [KotatsuApp](https://github.com/KotatsuApp) for providing some parsers and the core library.
+- Thanks to [Keiyoushi](https://github.com/Keiyoushi) for providing some extensions code on GitHub.
 
 ### License
 
