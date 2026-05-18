@@ -22,12 +22,6 @@ This template project provides a collection of utilities and some parsers for co
     .\gradlew.bat buildJar
     ```
 
-2. Dex it with d8 after building:
-
-	```bash
- 	d8 --release build/libs/plugin.jar --output plugin.jar
- 	```
-
 **More simply, just run `buildJar` task in Android Studio / IntelliJ IDEA and dex it after building.**
 
 ## Credits
