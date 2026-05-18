@@ -87,7 +87,7 @@ internal class HentaiCube(context: MangaLoaderContext) :
 			}
 
 			append("/?s=")
-            append(filter.query?.urlEncoded())
+            append(filter.query?.urlEncoded() ?: "")
 
 			append("&post_type=wp-manga")
 

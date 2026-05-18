@@ -80,12 +80,12 @@ internal class MimiHentai(context: MangaLoaderContext) :
 
 				if (!filter.query.isNullOrEmpty()) {
 					append("&title=")
-					append((filter.query?.urlEncoded()))
+					append(filter.query?.urlEncoded() ?: "")
 				}
 
 				if (!filter.author.isNullOrEmpty()) {
 					append("&author=")
-					append(filter.author?.substringAfter("(")?.substringBefore(")"))
+					append(filter.author?.substringAfter("(")?.substringBefore(")") ?: "")
 				}
 
 				if (filter.tags.isNotEmpty()) {
