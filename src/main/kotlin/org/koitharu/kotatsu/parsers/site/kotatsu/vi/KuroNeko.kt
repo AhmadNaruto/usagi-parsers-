@@ -11,7 +11,6 @@ import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Request
 import org.json.JSONObject
-import org.json.JSONArray
 import org.jsoup.Jsoup
 import org.koitharu.kotatsu.parsers.network.CommonHeaders
 import org.koitharu.kotatsu.parsers.network.OkHttpWebClient
@@ -24,7 +23,7 @@ import kotlin.time.Duration.Companion.seconds
 internal class KuroNeko(context: MangaLoaderContext):
 	PagedMangaParser(context, MangaParserSource.KURONEKO, 30) {
 
-	override val configKeyDomain = ConfigKey.Domain("vi-hentai.moe", "vi-hentai.pro")
+	override val configKeyDomain = ConfigKey.Domain("vi-hentai.pro", "vi-hentai.moe")
 
 	override val webClient = OkHttpWebClient(
 		context.httpClient.newBuilder()
@@ -245,14 +244,14 @@ internal class KuroNeko(context: MangaLoaderContext):
 				val body = response.peekBody(1024 * 1024)
 				val html = body.string()
 				if (html.contains("enter-secret")) {
-					response.close()
 					val bypassSuccess = try {
-						bypassPasswordGate(chain, html, request.url, newRequest)
+						bypassGateKeeper(chain, html, request.url, newRequest)
 					} catch (e: Exception) {
 						e.printStackTrace()
 						false
 					}
 					if (bypassSuccess) {
+						response.close()
 						val retryRequest = newRequest.newBuilder()
 							.addHeader("X-Bypass-Tried", "true")
 							.build()
@@ -265,69 +264,29 @@ internal class KuroNeko(context: MangaLoaderContext):
 		return response
 	}
 
-	private fun bypassPasswordGate(
-		chain: Interceptor.Chain,
-		html: String,
-		originalUrl: okhttp3.HttpUrl,
-		newRequest: okhttp3.Request
+	/* Thanks to Gemini for this crazy idea */
+	private fun bypassGateKeeper(chain: Interceptor.Chain, html: String,
+		originalUrl: okhttp3.HttpUrl, newRequest: Request
 	): Boolean {
 		val doc = Jsoup.parse(html, originalUrl.toString())
-		val livewireElement = doc.select("div[wire:id][wire:initial-data]").firstOrNull {
-			it.attr("wire:initial-data").contains("enter-secret")
-		} ?: return false
-
-		val initialDataStr = livewireElement.attr("wire:initial-data")
-		val initialData = JSONObject(initialDataStr)
+		val element = doc.selectFirst("[wire:id][wire:initial-data]") ?: return false
+		val initialData = JSONObject(element.attr("wire:initial-data"))
 		val fingerprint = initialData.getJSONObject("fingerprint")
 		val serverMemo = initialData.getJSONObject("serverMemo")
 
-		val data = serverMemo.getJSONObject("data")
-		data.put("password", "lothanhchiton")
+		val payload = """
+			{"fingerprint":$fingerprint,"serverMemo":$serverMemo,"updates":[{"type":"syncInput","payload":{"id":"gf6w","name":"password","value":"lothanhchiton"}},{"type":"callMethod","payload":{"id":"gf6w","method":"submit","params":[]}}]}
+		""".trimIndent()
 
-		val updates = JSONArray().apply {
-			put(JSONObject().apply {
-				put("type", "callMethod")
-				put("payload", JSONObject().apply {
-					put("id", "gf6w")
-					put("method", "submit")
-					put("params", JSONArray())
-				})
-			})
-		}
-
-		val payload = JSONObject().apply {
-			put("fingerprint", fingerprint)
-			put("serverMemo", serverMemo)
-			put("updates", updates)
-		}
-
-		var csrfToken = doc.selectFirst("meta[name=csrf-token]")?.attr("content")
+		val csrfToken = doc.selectFirst("meta[name=csrf-token]")?.attr("content")
 			?: doc.selectFirst("input[name=_token]")?.attr("value")
-			?: ""
+			?: Regex("""(?:csrf-token|livewire[-_]token)\s*[:=]\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+				.find(html)?.groupValues?.get(1) ?: ""
 
-		if (csrfToken.isEmpty()) {
-			val tokenRegex = Regex("""(?:csrf-token|csrfToken|_token)\s*[:=]\s*["']([^"']+)["']""", RegexOption.IGNORE_CASE)
-			doc.select("script").forEach { script ->
-				val match = tokenRegex.find(script.data())
-				if (match != null) {
-					csrfToken = match.groupValues[1]
-					return@forEach
-				}
-			}
-		}
-
-		val componentName = fingerprint.getString("name")
-		val livewireUrl = originalUrl.newBuilder()
-			.encodedPath("/livewire/message/$componentName")
-			.query(null)
-			.build()
-
-		val mediaType = "application/json; charset=utf-8".toMediaType()
-		val postBody = payload.toString().toRequestBody(mediaType)
 		val postRequest = Request.Builder()
 			.headers(newRequest.headers)
-			.post(postBody)
-			.url(livewireUrl)
+			.post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
+			.url(originalUrl.newBuilder().encodedPath("/livewire/message/${fingerprint.getString("name")}").query(null).build())
 			.addHeader("X-CSRF-TOKEN", csrfToken)
 			.addHeader("X-Livewire", "true")
 			.addHeader("Accept", "text/html, application/xhtml+xml")
@@ -336,7 +295,7 @@ internal class KuroNeko(context: MangaLoaderContext):
 
 		chain.proceed(postRequest).use { response ->
 			if (response.isSuccessful) {
-				val respBody = response.body?.string() ?: ""
+				val respBody = response.body.string()
 				return respBody.contains("Passed") || response.headers("Set-Cookie").any { it.contains("session") }
 			}
 		}
