@@ -16,25 +16,23 @@ import org.koitharu.kotatsu.parsers.model.MangaTag
 import org.koitharu.kotatsu.parsers.model.RATING_UNKNOWN
 import org.koitharu.kotatsu.parsers.model.SortOrder
 import org.koitharu.kotatsu.parsers.network.CommonHeaders
-import org.koitharu.kotatsu.parsers.network.OkHttpWebClient
 import org.koitharu.kotatsu.parsers.util.generateUid
 import org.koitharu.kotatsu.parsers.util.json.asTypedList
 import org.koitharu.kotatsu.parsers.util.json.getFloatOrDefault
 import org.koitharu.kotatsu.parsers.util.json.getStringOrNull
 import org.koitharu.kotatsu.parsers.util.json.mapJSON
 import org.koitharu.kotatsu.parsers.util.json.mapJSONNotNull
+import org.koitharu.kotatsu.parsers.util.json.mapJSONToSet
 import org.koitharu.kotatsu.parsers.util.mapChapters
 import org.koitharu.kotatsu.parsers.util.mapToSet
 import org.koitharu.kotatsu.parsers.util.oneOrThrowIfMany
 import org.koitharu.kotatsu.parsers.util.parseJson
 import org.koitharu.kotatsu.parsers.util.parseSafe
-import org.koitharu.kotatsu.parsers.util.rateLimit
 import org.koitharu.kotatsu.parsers.util.urlBuilder
 import java.text.SimpleDateFormat
 import java.util.EnumSet
 import java.util.Locale
 import java.util.TimeZone
-import kotlin.time.Duration.Companion.seconds
 
 @MangaSourceParser("BFANGTEAM", "Moè Truyện", "vi")
 internal class BFANGTeam (context: MangaLoaderContext) :
@@ -53,11 +51,6 @@ internal class BFANGTeam (context: MangaLoaderContext) :
 		super.onCreateConfig(keys)
 		keys.remove(userAgentKey)
 	}
-
-	override val webClient = OkHttpWebClient(
-		context.httpClient.newBuilder()
-			.rateLimit(7, 1.seconds)
-			.build(), source)
 
 	override fun getRequestHeaders() = super.getRequestHeaders().newBuilder()
 		.add(CommonHeaders.ORIGIN, "https://$domain")
@@ -167,7 +160,7 @@ internal class BFANGTeam (context: MangaLoaderContext) :
 			Manga(
 				id = generateUid(id),
 				url = id.toString(),
-				publicUrl = "https://$domain/manga/${jo.getString("slug")}",
+				publicUrl = "https://$domain/manga/$id",
 				title = jo.getString("title"),
 				altTitles = jo.getJSONArray("altTitles").asTypedList<String>().mapToSet { it },
 				coverUrl = jo.getString("coverUrl"),
@@ -190,6 +183,19 @@ internal class BFANGTeam (context: MangaLoaderContext) :
 	}
 
 	override suspend fun getDetails(manga: Manga): Manga {
+		val url = urlBuilder().host(apiDomain)
+			.addEncodedPathSegments("$apiSuffix/manga/${manga.url}")
+			.addQueryParameter("include", "")
+
+		val json = webClient.httpGet(url.build()).parseJson()
+		val tags = json.getJSONObject("data").optJSONArray("genres")?.mapJSONToSet {
+			MangaTag(
+				title = it.getString("name"),
+				key = it.getInt("id").toString(),
+				source = source,
+			)
+		} ?: manga.tags
+
 		val chapterDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).apply {
 			timeZone = TimeZone.getTimeZone("UTC+7")
 		}
@@ -233,7 +239,7 @@ internal class BFANGTeam (context: MangaLoaderContext) :
 		} while (nextPage)
 
 		val allChaps = chapters.sortedBy { it.number }
-		return manga.copy(chapters = allChaps)
+		return manga.copy(chapters = allChaps, tags = tags)
 	}
 
 	override suspend fun getPages(chapter: MangaChapter): List<MangaPage> {
