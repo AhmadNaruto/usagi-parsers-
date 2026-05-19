@@ -191,24 +191,24 @@ internal class KuroNeko(context: MangaLoaderContext):
 			},
 			authors = setOfNotNull(author),
 			description = root.selectFirst("meta[name=description]")?.attrOrNull("content"),
-			chapters = root.select("div.justify-between ul.overflow-y-auto.overflow-x-hidden a")
-				.mapChapters(reversed = true) { i, a ->
-					val href = a.attrAsRelativeUrl("href")
-					val name = a.selectFirst("span.text-ellipsis")?.text().orEmpty()
-					val dateText = a.parent()?.selectFirst("span.timeago")?.attr("datetime").orEmpty()
-					val scanlator = root.selectFirst("div.mt-2:contains(Nhóm dịch) span a")?.textOrNull()
-					MangaChapter(
-						id = generateUid(href),
-						title = name,
-						number = i.toFloat(),
-						volume = 0,
-						url = href,
-						scanlator = scanlator,
-						uploadDate = parseDateTime(dateText),
-						branch = null,
-						source = source,
-					)
-				},
+			chapters = root.select("div.justify-between ul.overflow-y-auto.overflow-x-hidden li").mapChapters(true) { i, li ->
+				val a = li.selectFirst("a[href*=/truyen/]") ?: li.parseFailed("Không thể tìm thấy link chương")
+				val href = a.attrAsRelativeUrl("href")
+				val name = a.text().ifEmpty { li.selectFirst("span.truncate")?.text().orEmpty() }
+				val dateText = li.selectFirst("span.timeago")?.attr("datetime").orEmpty()
+				val scanlator = root.selectFirst("div.mt-2:contains(Nhóm dịch) span a")?.textOrNull()
+				MangaChapter(
+					id = generateUid(href),
+					title = name,
+					number = i.toFloat(),
+					volume = 0,
+					url = href,
+					scanlator = scanlator,
+					uploadDate = parseDateTime(dateText),
+					branch = null,
+					source = source,
+				)
+			},
 		)
 	}
 
