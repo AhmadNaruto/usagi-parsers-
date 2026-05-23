@@ -31,7 +31,7 @@ internal class GocTruyenTranhVui(context: MangaLoaderContext):
 		source,
 	)
 
-    override val configKeyDomain = ConfigKey.Domain("goctruyentranhvui21.com")
+    override val configKeyDomain = ConfigKey.Domain("goctruyentranhvui30.com")
 	override val userAgentKey = ConfigKey.UserAgent(
 		"Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.7204.46 Mobile Safari/537.36",
 	)
