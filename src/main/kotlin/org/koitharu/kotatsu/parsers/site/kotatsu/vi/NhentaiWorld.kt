@@ -26,7 +26,7 @@ internal class NhentaiWorld(context: MangaLoaderContext) :
 
     private val apiDomain = "vvcz.online"
 	private val cdnDomain = "vvcz.store"
-    override val configKeyDomain = ConfigKey.Domain("nhentaiclub.site")
+    override val configKeyDomain = ConfigKey.Domain("nhentaiclub.space")
 
 	override fun onCreateConfig(keys: MutableCollection<ConfigKey<*>>) {
 		super.onCreateConfig(keys)
