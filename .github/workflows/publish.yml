@@ -38,7 +38,7 @@ jobs:
           uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
 
       -   name: Run buildJar task 🚀
-          run: ./gradlew buildJar --rerun-tasks
+          run: chmod +x gradlew && ./gradlew buildJar --rerun-tasks
 
       -   name: Upload to GitHub Release 📤
           uses: softprops/action-gh-release@da05d552573ad5aba039eaac05058a918a7bf631 # v2.2.2
