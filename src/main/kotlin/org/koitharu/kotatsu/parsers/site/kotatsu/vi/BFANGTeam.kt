@@ -90,6 +90,7 @@ internal class BFANGTeam (context: MangaLoaderContext) :
 			// default values, fixed
 			addQueryParameter("page", page.toString())
 			addQueryParameter("limit", pageSize.toString())
+			addEncodedQueryParameter("include", "genres")
 
 			if (!filter.query.isNullOrEmpty() || filter.tags.isNotEmpty() ||
 				filter.states.isNotEmpty() || filter.tagsExclude.isNotEmpty()) {
@@ -132,7 +133,6 @@ internal class BFANGTeam (context: MangaLoaderContext) :
 			} else {
 				// top manga for 3 special orders
 				addPathSegment("top")
-				addQueryParameter("include", "")
 				when (order) {
 					SortOrder.POPULARITY_TODAY -> {
 						addQueryParameter("sort_by", "views")
@@ -166,7 +166,13 @@ internal class BFANGTeam (context: MangaLoaderContext) :
 				coverUrl = jo.getString("coverUrl"),
 				largeCoverUrl = null,
 				authors = setOf(jo.getString("author")),
-				tags = emptySet(),
+				tags = jo.getJSONArray("genres").mapJSONToSet {
+					MangaTag(
+						title = it.getString("name"),
+						key = it.getInt("id").toString(),
+						source = source,
+					)
+				},
 				state = when (jo.getString("status")) {
 					"ongoing" -> MangaState.ONGOING
 					"completed" -> MangaState.FINISHED
@@ -185,7 +191,7 @@ internal class BFANGTeam (context: MangaLoaderContext) :
 	override suspend fun getDetails(manga: Manga): Manga {
 		val url = urlBuilder().host(apiDomain)
 			.addEncodedPathSegments("$apiSuffix/manga/${manga.url}")
-			.addQueryParameter("include", "")
+			.addEncodedQueryParameter("include", "genres")
 
 		val json = webClient.httpGet(url.build()).parseJson()
 		val tags = json.getJSONObject("data").optJSONArray("genres")?.mapJSONToSet {
