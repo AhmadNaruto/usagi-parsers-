@@ -1,6 +1,5 @@
 package org.koitharu.kotatsu.parsers.site.kotatsu.madara.vi
 
-import org.koitharu.kotatsu.parsers.Broken
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
 import org.koitharu.kotatsu.parsers.MangaSourceParser
 import org.koitharu.kotatsu.parsers.model.ContentRating
@@ -15,10 +14,9 @@ import org.koitharu.kotatsu.parsers.util.oneOrThrowIfMany
 import org.koitharu.kotatsu.parsers.util.parseHtml
 import org.koitharu.kotatsu.parsers.util.urlEncoded
 
-@Broken("Server side issues, not app issues")
-@MangaSourceParser("HENTAIVNPLUS", "QManga", "vi", ContentType.HENTAI)
+@MangaSourceParser("HENTAIVNPLUS", "HentaiVN.plus", "vi", ContentType.HENTAI)
 internal class HentaiVnPlus(context: MangaLoaderContext) :
-	MadaraParser(context, MangaParserSource.HENTAIVNPLUS, "qmanga.art", 24) {
+	MadaraParser(context, MangaParserSource.HENTAIVNPLUS, "hentaivn.name", 24) {
 	override val listUrl = "truyen-hentai/"
 	override val tagPrefix = "the-loai/"
 	override val datePattern = "dd/MM/yyyy"
