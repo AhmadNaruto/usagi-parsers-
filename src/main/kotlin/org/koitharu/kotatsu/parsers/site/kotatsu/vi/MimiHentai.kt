@@ -37,8 +37,18 @@ internal class MimiHentai(context: MangaLoaderContext) :
 		)
 	}
 
+	private val preferredServerKey = ConfigKey.PreferredImageServer(
+		presetValues = mapOf(
+			"original" to "Server ảnh gốc (Original)",
+			"600" to "Nén xuống 600x",
+			"800" to "Nén xuống 800x",
+		),
+		defaultValue = "original",
+	)
+
 	override fun onCreateConfig(keys: MutableCollection<ConfigKey<*>>) {
 		super.onCreateConfig(keys)
+		keys.add(preferredServerKey)
 		keys.remove(userAgentKey)
 	}
 
@@ -208,12 +218,19 @@ internal class MimiHentai(context: MangaLoaderContext) :
 
 	override suspend fun getPages(chapter: MangaChapter): List<MangaPage> {
 		val json = webClient.httpGet(chapter.url.toAbsoluteUrl(domain)).parseJson()
+		val server = config[preferredServerKey] ?: "original"
 		return json.getJSONArray("pages").mapJSON { jo ->
 			val imageUrl = jo.getString("image_url")
 			val gt = jo.getStringOrNull("drm")
 			MangaPage(
 				id = generateUid(imageUrl),
-				url = if (gt != null) "$imageUrl#$GT$gt" else imageUrl,
+				url = if (gt != null) "$imageUrl#$GT$gt" else {
+					val cleanUrl = imageUrl.removePrefix("http://").removePrefix("https://")
+					when (server) {
+						"original" -> imageUrl
+						else -> "https://i0.wp.com/$cleanUrl?w=$server"
+					}
+				},
 				preview = null,
 				source = source,
 			)
