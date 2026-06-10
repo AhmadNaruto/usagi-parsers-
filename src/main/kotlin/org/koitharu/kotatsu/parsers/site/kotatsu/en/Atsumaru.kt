@@ -1,4 +1,4 @@
-package org.koitharu.kotatsu.parsers.site.en
+package org.koitharu.kotatsu.parsers.site.kotatsu.en
 
 import org.json.JSONObject
 import org.koitharu.kotatsu.parsers.MangaLoaderContext
