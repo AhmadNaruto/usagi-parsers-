@@ -492,6 +492,26 @@ open class TachiyomiSourceAdapter(
             "état",
             "estado",
             "zustand",
+            "stato",
+            "statut",
+            "tilstand",
+            "statuss",
+            "állapot",
+            "stan",
+            "stav",
+            "κατάσταση",
+            "состояние",
+            "статус",
+            "стан",
+            "statusul",
+            "状態",
+            "ステータス",
+            "状況",
+            "状态",
+            "狀態",
+            "상태",
+            "حالة",
+            "الحالة",
         )
 
         /** Label fragments (lowercased) that map to [MangaState.ONGOING]. */
@@ -502,14 +522,96 @@ open class TachiyomiSourceAdapter(
             "updating",
             "publishing",
             "airing",
-            "đang",          // Vietnamese "đang tiến hành"
+            "đang",
             "dang tien hanh",
-            "devam",         // Turkish
-            "en cours",      // French
-            "en curso",      // Spanish
-            "lançando",      // Portuguese
-            "выходит",       // Russian
+            "devam",
+            "en cours",
+            "en curso",
+            "lançando",
+            "выходит",
             "продолжается",
+
+            // German
+            "laufend",
+            "fortlaufend",
+            "aktuell",
+
+            // Italian
+            "in corso",
+            "attivo",
+            "pubblicazione",
+
+            // Portuguese
+            "em andamento",
+            "publicando",
+            "ativo",
+
+            // Spanish
+            "en publicación",
+            "publicándose",
+            "continuando",
+            "continúa",
+
+            // French
+            "en marche",
+            "publication",
+            "actif",
+
+            // Indonesian / Malay
+            "aktif",
+            "berjalan",
+            "sedang berlangsung",
+            "masih berjalan",
+
+            // Arabic
+            "مستمر",
+            "جاري",
+            "قيد النشر",
+            "مستمرة",
+
+            // Japanese
+            "進行中",
+            "連載中",
+            "掲載中",
+            "更新中",
+
+            // Chinese
+            "连载中",
+            "進行中",
+            "进行中",
+            "更新中",
+
+            // Korean
+            "진행중",
+            "연재중",
+            "업데이트중",
+
+            // Polish
+            "w toku",
+            "kontynuowane",
+            "trwa",
+
+            // Czech / Slovak
+            "probíhá",
+            "pokračuje",
+            "prebieha",
+
+            // Hungarian
+            "folyamatban",
+            "aktív",
+
+            // Nordic
+            "pågående",
+            "fortsetter",
+            "igång",
+
+            // Balkan
+            "u tijeku",
+            "u toku",
+
+            // Ukrainian
+            "триває",
+            "продовжується",
         )
 
         /** Label fragments (lowercased) that map to [MangaState.FINISHED]. */
@@ -518,15 +620,95 @@ open class TachiyomiSourceAdapter(
             "complete",
             "finished",
             "end",
+            "done",
             "full",
-            "hoàn",          // Vietnamese "hoàn thành" / "hoàn tất"
+            "hoàn",
             "hoan thanh",
             "trọn bộ",
             "tron bo",
-            "tamamland",     // Turkish
+            "tamamland",
             "achevé",
             "terminé",
-            "завершено",     // Russian
+            "завершено",
+
+            // Spanish
+            "completado",
+            "completa",
+            "finalizado",
+            "terminado",
+
+            // Portuguese
+            "concluido",
+            "encerrado",
+
+            // Italian
+            "completato",
+            "terminato",
+            "concluso",
+
+            // German
+            "abgeschlossen",
+            "beendet",
+            "fertig",
+            "vollständig",
+            "vollendet",
+
+            // French
+            "fini",
+            "complété",
+
+            // Indonesian / Malay
+            "selesai",
+            "tamat",
+            "berakhir",
+
+            // Arabic
+            "اكتمل",
+            "مكتمل",
+            "منتهي",
+
+            // Japanese
+            "終了",
+            "完結",
+            "完了",
+
+            // Chinese
+            "已完结",
+            "完结",
+            "已完成",
+            "已完結",
+            "完結",
+
+            // Korean
+            "완결",
+            "완료",
+            "종료",
+
+            // Polish
+            "zakończone",
+            "ukończone",
+
+            // Czech / Slovak
+            "dokončeno",
+            "ukončeno",
+            "dokončené",
+            "ukončené",
+
+            // Hungarian
+            "befejezett",
+            "lezárt",
+
+            // Nordic
+            "avslutad",
+            "fullført",
+            "afsluttet",
+
+            // Russian
+            "завершён",
+            "окончен",
+
+            // Ukrainian
+            "закінчено",
         )
 
         /** Label fragments (lowercased) that map to [MangaState.PAUSED]. */
@@ -535,10 +717,80 @@ open class TachiyomiSourceAdapter(
             "on hold",
             "on-hold",
             "paused",
-            "beklemede",     // Turkish
+            "beklemede",
             "durduruldu",
             "en pause",
-            "заморожено",    // Russian
+            "заморожено",
+
+            // Generic
+            "suspended",
+
+            // Spanish / Portuguese
+            "suspenso",
+            "pausa",
+            "en pausa",
+            "pausado",
+
+            // French
+            "pausée",
+            "en attente",
+
+            // Italian
+            "in pausa",
+            "sospeso",
+
+            // German
+            "pausiert",
+            "unterbrochen",
+            "angehalten",
+            "pause",
+
+            // Indonesian
+            "ditunda",
+            "tertunda",
+            "menunggu",
+
+            // Arabic
+            "معلق",
+            "متوقف مؤقتاً",
+            "في انتظار",
+
+            // Japanese
+            "休載",
+            "休止中",
+
+            // Chinese
+            "暂停",
+            "暫停",
+            "暂停中",
+
+            // Korean
+            "휴재",
+            "중단",
+            "보류",
+
+            // Polish
+            "wstrzymane",
+            "zawieszone",
+
+            // Czech / Slovak
+            "pozastaveno",
+            "pozastavené",
+
+            // Hungarian
+            "szünetel",
+
+            // Nordic
+            "uppehåll",
+            "på vent",
+            "sat på pause",
+
+            // Russian
+            "приостановлено",
+            "на паузе",
+
+            // Ukrainian
+            "призупинено",
         )
 
         /** Label fragments (lowercased) that map to [MangaState.ABANDONED]. */
@@ -549,13 +801,80 @@ open class TachiyomiSourceAdapter(
             "drop",
             "abandoned",
             "discontinued",
-            "iptal",         // Turkish
+            "iptal",
             "đã hủy",
             "da huy",
             "abandonné",
-            "заброшено",     // Russian
+            "заброшено",
+
+            // Spanish / Portuguese
+            "cancelado",
+            "cancelada",
+            "abandonado",
+            "descatalogado",
+            "descontinuado",
+
+            // French
+            "annulé",
+            "interrompu",
+
+            // Italian
+            "cancellato",
+            "abbandonato",
+
+            // German
+            "eingestellt",
+            "abgebrochen",
+            "verworfen",
+
+            // Indonesian / Malay
+            "dibatalkan",
+            "dihentikan",
+            "terbengkalai",
+
+            // Arabic
+            "ملغى",
+            "متروك",
+            "متوقف نهائياً",
+
+            // Japanese
+            "打ち切り",
+            "中止",
+            "放棄",
+
+            // Chinese
+            "已取消",
+            "取消",
+            "停更",
+
+            // Korean
+            "취소",
+            "중단됨",
+            "버려짐",
+
+            // Polish
+            "anulowane",
+            "porzucone",
+
+            // Czech / Slovak
+            "zrušeno",
+            "opustené",
+
+            // Hungarian
+            "megszakítva",
+            "elhagyott",
+
+            // Nordic
+            "nedlagt",
+            "avbruten",
+
+            // Russian
+            "отменено",
+            "брошено",
+
+            // Ukrainian
+            "скасовано",
+            "покинуто",
         )
     }
 }
-
-
