@@ -92,7 +92,7 @@ internal class Atsumaru(context: MangaLoaderContext) :
         var page = 0
 
         while (true) {
-            val chaptersUrl = "https://$domain/api/manga/chapters?id=$slug&filter=all&sort=asc&page=$page"
+            val chaptersUrl = "https://$domain/api/manga/chapters?id=$slug&filter=all&sort=desc&page=$page"
             val response = webClient.httpGet(chaptersUrl).parseJson()
             val chapters = response.optJSONArray("chapters") ?: break
 
@@ -134,7 +134,7 @@ internal class Atsumaru(context: MangaLoaderContext) :
         }
 
         return baseManga.copy(
-            chapters = allChapters,
+            chapters = allChapters.reversed(),
             state = baseManga.state // Preserve the state parsed from details
         )
     }
