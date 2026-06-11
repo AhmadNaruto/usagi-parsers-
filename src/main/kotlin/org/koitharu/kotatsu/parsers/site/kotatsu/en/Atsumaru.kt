@@ -76,70 +76,55 @@ internal class Atsumaru(context: MangaLoaderContext) :
         }
     }
 
-    override suspend fun getDetails(manga: Manga): Manga {
-        // 1. Fetch Details
-        // The ID in Kotatsu might be generated, so we rely on the URL or the ID if it's the raw slug
-        val slug = manga.url // In parseMangaDto, we stored the raw ID/slug as url
+	override suspend fun getDetails(manga: Manga): Manga {
+        val slug = manga.url
 
         val detailsUrl = "https://$domain/api/manga/page?id=$slug"
         val detailsResponse = webClient.httpGet(detailsUrl).parseJson()
         val mangaPage = detailsResponse.getJSONObject("mangaPage")
-
         val baseManga = parseMangaDto(mangaPage)
 
-        // 2. Fetch Chapters (Paginated)
+        val chaptersUrl = "https://$domain/api/manga/allChapters?mangaId=$slug"
+        val response = webClient.httpGet(chaptersUrl).parseJson()
+        val chapters = response.optJSONArray("chapters") ?: return baseManga
+
         val allChapters = ArrayList<MangaChapter>()
-        var page = 0
 
-        while (true) {
-            val chaptersUrl = "https://$domain/api/manga/chapters?id=$slug&filter=all&sort=desc&page=$page"
-            val response = webClient.httpGet(chaptersUrl).parseJson()
-            val chapters = response.optJSONArray("chapters") ?: break
+        for (i in 0 until chapters.length()) {
+            val ch = chapters.getJSONObject(i)
+            val chId = ch.getString("id")
+            val number = ch.optDouble("chapter_number", ch.optDouble("number", 0.0)).toFloat()
+            val title = ch.optString("title")
+            val dateStr = ch.optString("createdAt", ch.optString("date_upload"))
+            val uploadDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
+                .parseSafe(dateStr)
 
-            if (chapters.length() == 0) break
+            val scanlator = ch.optString("scanlator").takeIf { it.isNotEmpty() }
+            val chapterUrl = "$slug/$chId"
 
-            for (i in 0 until chapters.length()) {
-                val ch = chapters.getJSONObject(i)
-                val chId = ch.getString("id")
-                val number = ch.optDouble("number", 0.0).toFloat()
-                val title = ch.optString("title")
-                val dateStr = ch.optString("createdAt")
-				val uploadDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-					.parseSafe(dateStr)
-
-                // Format: slug/chapterId
-                val chapterUrl = "$slug/$chId"
-
-                allChapters.add(
-                    MangaChapter(
-                        id = generateUid(chapterUrl), // Generate unique ID from the composite URL
-                        title = title,
-                        number = number,
-                        volume = 0,
-                        url = chapterUrl,
-                        uploadDate = uploadDate,
-                        source = source,
-                        scanlator = null,
-                        branch = null
-                    )
+            allChapters.add(
+                MangaChapter(
+                    id = generateUid(chapterUrl),
+                    title = title.ifEmpty { "Chapter $number" },
+                    number = number,
+                    volume = 0,
+                    url = chapterUrl,
+                    uploadDate = uploadDate,
+                    source = source,
+                    scanlator = scanlator,
+                    branch = scanlator
                 )
-            }
-
-            val totalPages = response.optInt("pages", 0)
-            val currentPage = response.optInt("page", 0)
-
-            // Check if we reached the last page
-            if (currentPage + 1 >= totalPages) break
-            page++
+            )
         }
 
-		val finalChapters = allChapters
-        .distinctBy { it.number }
-        .sortedByDescending { it.number }
-		
+        val finalChapters = allChapters.sortedWith(
+            compareByDescending<MangaChapter> { it.number }
+                .thenBy { it.branch ?: "" }
+        )
+
         return baseManga.copy(
             chapters = finalChapters,
-            state = baseManga.state // Preserve the state parsed from details
+            state = baseManga.state
         )
     }
 
