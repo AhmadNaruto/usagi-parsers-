@@ -31,7 +31,7 @@ internal class Atsumaru(context: MangaLoaderContext) :
 
     override suspend fun getListPage(page: Int, order: SortOrder, filter: MangaListFilter): List<Manga> {
         // Case 1: Search (Uses a different API endpoint)
-		val query = filterr.query
+		val query = filter.query
         if (!query.isNullOrEmpty()) {
             return getSearchPage(page, query)
         }
