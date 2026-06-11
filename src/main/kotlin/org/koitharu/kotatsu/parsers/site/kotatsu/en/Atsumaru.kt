@@ -135,7 +135,7 @@ internal class Atsumaru(context: MangaLoaderContext) :
 
 		val finalChapters = allChapters
         .distinctBy { it.number }
-        .sortedBy { it.number }
+        .sortedByDescending { it.number }
 		
         return baseManga.copy(
             chapters = finalChapters,
