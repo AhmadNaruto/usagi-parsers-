@@ -133,8 +133,10 @@ internal class Atsumaru(context: MangaLoaderContext) :
             page++
         }
 
+		allChapters.reverse()
+		
         return baseManga.copy(
-            chapters = allChapters.reversed(),
+            chapters = allChapters,
             state = baseManga.state // Preserve the state parsed from details
         )
     }
