@@ -122,7 +122,11 @@ internal class ATSUMARU(context: MangaLoaderContext) :
     override suspend fun getDetails(manga: Manga): Manga {
         val mangaId = manga.url.substringAfterLast("/")
         val json = webClient.httpGet("${apiUrl}manga/page?id=$mangaId").parseJson()
-        val mangaPage = json.optJSONObject("mangaPage")
+        val mangaPage = if (json.has("mangaPage") && !json.isNull("mangaPage")) {
+            json.getJSONObject("mangaPage")
+        } else {
+            null
+        }
 
         val title = mangaPage?.optString("title")?.ifEmpty {
             mangaPage.optString("englishTitle", manga.title)
