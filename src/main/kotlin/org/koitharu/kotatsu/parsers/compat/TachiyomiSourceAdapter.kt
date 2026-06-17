@@ -73,7 +73,7 @@ open class TachiyomiSourceAdapter(
         val originalDomain = runCatching { java.net.URI(tachiyomiSource.baseUrl).host }.getOrNull()
         val interceptedClient = context.httpClient.newBuilder()
             .addInterceptor { chain ->
-                var request = chain.request()
+                val request = chain.request()
                 val builder = request.newBuilder()
                 val customUa = config[userAgentKey]
                 if (originalDomain != null && request.url.host == originalDomain) {
@@ -111,6 +111,7 @@ open class TachiyomiSourceAdapter(
     }
 
     // ========================== Sort / Order ===============================
+
     override val availableSortOrders: Set<SortOrder> = buildSet {
         add(SortOrder.UPDATED)
         add(SortOrder.POPULARITY)
@@ -135,7 +136,6 @@ open class TachiyomiSourceAdapter(
             isMultipleTagsSupported = true,
             isAuthorSearchSupported = hasTextFilter,
         )
-
 
     // ============================== List ===================================
 
@@ -181,6 +181,7 @@ open class TachiyomiSourceAdapter(
                                         }
                                     }
                                 }
+
                                 f is eu.kanade.tachiyomi.source.model.Filter.Select<*> && isStatusFilterSelect(f) -> {
                                     // Pick the first matching option for single-select status
                                     val values = f.values
@@ -192,24 +193,71 @@ open class TachiyomiSourceAdapter(
                                         }
                                     }
                                 }
+
                                 else -> {}
                             }
                         }
                     }
 
                     tachiyomiSource.fetchSearchManga(page, query ?: "", tachiyomiFilters)
-                        .toBlocking().single()
+                        .toBlocking()
+                        .single()
                 }
-                order == SortOrder.NEWEST && tachiyomiSource.supportsLatest -> {
-                    tachiyomiSource.fetchLatestUpdates(page).toBlocking().single()
-                }
+
                 else -> {
-                    tachiyomiSource.fetchPopularManga(page).toBlocking().single()
+                    fetchCatalogPageWithFallback(page, order)
                 }
             }
         }
 
         return mangasPage.mangas.map { it.toManga() }
+    }
+
+    /**
+     * Some Tachiyomi sources have working search/details but may return an empty list
+     * for either popular or latest. Try the normal endpoint first, then fallback to the
+     * empty search endpoint and finally the opposite list endpoint.
+     */
+    private fun fetchCatalogPageWithFallback(page: Int, order: SortOrder): MangasPage {
+        val primary = when {
+            order == SortOrder.NEWEST && tachiyomiSource.supportsLatest -> {
+                tachiyomiSource.fetchLatestUpdates(page).toBlocking().single()
+            }
+
+            else -> {
+                tachiyomiSource.fetchPopularManga(page).toBlocking().single()
+            }
+        }
+
+        if (primary.mangas.isNotEmpty()) {
+            return primary
+        }
+
+        val searchFallback = runCatching {
+            tachiyomiSource.fetchSearchManga(page, "", tachiyomiSource.getFilterList())
+                .toBlocking()
+                .single()
+        }.getOrNull()
+
+        if (searchFallback != null && searchFallback.mangas.isNotEmpty()) {
+            return searchFallback
+        }
+
+        val secondary = runCatching {
+            when {
+                order == SortOrder.NEWEST && tachiyomiSource.supportsLatest -> {
+                    tachiyomiSource.fetchPopularManga(page).toBlocking().single()
+                }
+
+                tachiyomiSource.supportsLatest -> {
+                    tachiyomiSource.fetchLatestUpdates(page).toBlocking().single()
+                }
+
+                else -> null
+            }
+        }.getOrNull()
+
+        return secondary?.takeIf { it.mangas.isNotEmpty() } ?: primary
     }
 
     // ============================== Details ================================
@@ -278,10 +326,10 @@ open class TachiyomiSourceAdapter(
         }
 
         return pages.map { page ->
-            val imgUrl = page.imageUrl ?: page.url
+            val pageUrl = page.imageUrl ?: page.url
             MangaPage(
-                id = generateUid(imgUrl.ifEmpty { "${chapter.url}#${page.index}" }),
-                url = imgUrl,
+                id = generateUid(pageUrl.ifEmpty { "${chapter.url}#${page.index}" }),
+                url = pageUrl,
                 preview = null,
                 source = source,
             )
@@ -290,8 +338,47 @@ open class TachiyomiSourceAdapter(
 
     open override suspend fun getPageUrl(page: MangaPage): String {
         val url = page.url
-        if (url.startsWith("http://") || url.startsWith("https://")) return url
-        return "https://$domain$url"
+
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            if (url.isProbablyImageUrl()) {
+                return url
+            }
+
+            return withContext(Dispatchers.IO) {
+                runCatching {
+                    tachiyomiSource.fetchImageUrl(
+                        eu.kanade.tachiyomi.source.model.Page(
+                            index = 0,
+                            url = url,
+                            imageUrl = null,
+                        ),
+                    ).toBlocking().single()
+                }.getOrDefault(url)
+            }
+        }
+
+        val absoluteUrl = "https://$domain$url"
+        return withContext(Dispatchers.IO) {
+            runCatching {
+                tachiyomiSource.fetchImageUrl(
+                    eu.kanade.tachiyomi.source.model.Page(
+                        index = 0,
+                        url = absoluteUrl,
+                        imageUrl = null,
+                    ),
+                ).toBlocking().single()
+            }.getOrDefault(absoluteUrl)
+        }
+    }
+
+    private fun String.isProbablyImageUrl(): Boolean {
+        val cleanUrl = substringBefore('?').substringBefore('#').lowercase()
+        return cleanUrl.endsWith(".jpg") ||
+            cleanUrl.endsWith(".jpeg") ||
+            cleanUrl.endsWith(".png") ||
+            cleanUrl.endsWith(".webp") ||
+            cleanUrl.endsWith(".gif") ||
+            cleanUrl.endsWith(".avif")
     }
 
     // ============================== Filter Options =========================
@@ -440,9 +527,9 @@ open class TachiyomiSourceAdapter(
         val number = if (this.chapter_number > 0f) {
             this.chapter_number
         } else if (isNewestFirst) {
-            (total - index).toFloat()   // index 0 = newest = highest number
+            (total - index).toFloat() // index 0 = newest = highest number
         } else {
-            (index + 1).toFloat()       // index 0 = oldest = chapter 1
+            (index + 1).toFloat() // index 0 = oldest = chapter 1
         }
         return MangaChapter(
             id = generateUid(this.url),
@@ -502,13 +589,13 @@ open class TachiyomiSourceAdapter(
             "updating",
             "publishing",
             "airing",
-            "đang",          // Vietnamese "đang tiến hành"
+            "đang", // Vietnamese "đang tiến hành"
             "dang tien hanh",
-            "devam",         // Turkish
-            "en cours",      // French
-            "en curso",      // Spanish
-            "lançando",      // Portuguese
-            "выходит",       // Russian
+            "devam", // Turkish
+            "en cours", // French
+            "en curso", // Spanish
+            "lançando", // Portuguese
+            "выходит", // Russian
             "продолжается",
         )
 
@@ -519,14 +606,14 @@ open class TachiyomiSourceAdapter(
             "finished",
             "end",
             "full",
-            "hoàn",          // Vietnamese "hoàn thành" / "hoàn tất"
+            "hoàn", // Vietnamese "hoàn thành" / "hoàn tất"
             "hoan thanh",
             "trọn bộ",
             "tron bo",
-            "tamamland",     // Turkish
+            "tamamland", // Turkish
             "achevé",
             "terminé",
-            "завершено",     // Russian
+            "завершено", // Russian
         )
 
         /** Label fragments (lowercased) that map to [MangaState.PAUSED]. */
@@ -535,10 +622,10 @@ open class TachiyomiSourceAdapter(
             "on hold",
             "on-hold",
             "paused",
-            "beklemede",     // Turkish
+            "beklemede", // Turkish
             "durduruldu",
             "en pause",
-            "заморожено",    // Russian
+            "заморожено", // Russian
         )
 
         /** Label fragments (lowercased) that map to [MangaState.ABANDONED]. */
@@ -549,12 +636,11 @@ open class TachiyomiSourceAdapter(
             "drop",
             "abandoned",
             "discontinued",
-            "iptal",         // Turkish
+            "iptal", // Turkish
             "đã hủy",
             "da huy",
             "abandonné",
-            "заброшено",     // Russian
+            "заброшено", // Russian
         )
     }
 }
-
