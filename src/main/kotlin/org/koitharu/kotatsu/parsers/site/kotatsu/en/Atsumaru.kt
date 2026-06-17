@@ -122,55 +122,49 @@ internal class ATSUMARU(context: MangaLoaderContext) :
     override suspend fun getDetails(manga: Manga): Manga {
         val mangaId = manga.url.substringAfterLast("/")
         val json = webClient.httpGet("${apiUrl}manga/page?id=$mangaId").parseJson()
-        val mangaPage = json.optJSONObject("mangaPage") ?: return manga.copy(
-            chapters = fetchAllChapters(mangaId)
-        )
+        val mangaPage = json.optJSONObject("mangaPage")
 
-        val title = mangaPage.optString("title").ifEmpty {
+        val title = mangaPage?.optString("title")?.ifEmpty {
             mangaPage.optString("englishTitle", manga.title)
-        }
-        val description = mangaPage.optString("synopsis")
+        } ?: manga.title
 
-        // Parse poster object
-        val posterObj = mangaPage.optJSONObject("poster")
+        val description = mangaPage?.optString("synopsis") ?: manga.description
+
+        val posterObj = mangaPage?.optJSONObject("poster")
         val posterImage = posterObj?.optString("image")
         val coverUrl = if (!posterImage.isNullOrEmpty()) {
             "https://$domain/static/$posterImage"
         } else manga.coverUrl
 
-        // Parse tags
-        val tagsArray = mangaPage.optJSONArray("tags")
+        val tagsArray = mangaPage?.optJSONArray("tags")
         val tags = if (tagsArray != null) {
-            (0 until tagsArray.length()).map { i ->
-                val tag = tagsArray.getJSONObject(i)
+            (0 until tagsArray.length()).mapNotNull { i ->
+                val tag = tagsArray.optJSONObject(i) ?: return@mapNotNull null
                 MangaTag(
-                    key = tag.getString("id"),
-                    title = tag.getString("name"),
+                    key = tag.optString("id"),
+                    title = tag.optString("name"),
                     source = source
                 )
             }.toSet()
-        } else emptySet<MangaTag>()
+        } else manga.tags
 
-        // Parse authors
-        val authorsArray = mangaPage.optJSONArray("authors")
+        val authorsArray = mangaPage?.optJSONArray("authors")
         val authors = if (authorsArray != null) {
             (0 until authorsArray.length()).mapNotNull { i ->
-                val author = authorsArray.getJSONObject(i)
+                val author = authorsArray.optJSONObject(i) ?: return@mapNotNull null
                 author.optString("name").takeIf { it.isNotEmpty() }
             }.toSet()
-        } else emptySet<String>()
+        } else manga.authors
 
-        // Parse status
-        val status = mangaPage.optString("status")
+        val status = mangaPage?.optString("status").orEmpty()
         val state = when (status.lowercase()) {
             "ongoing" -> MangaState.ONGOING
             "completed" -> MangaState.FINISHED
             "hiatus" -> MangaState.PAUSED
             "cancelled" -> MangaState.ABANDONED
-            else -> null
+            else -> manga.state
         }
 
-        // Fetch all chapters from the chapters endpoint with pagination
         val chapters = fetchAllChapters(mangaId)
 
         return manga.copy(
@@ -193,9 +187,9 @@ internal class ATSUMARU(context: MangaLoaderContext) :
             val url = "${apiUrl}manga/chapters?id=$mangaId&filter=all&sort=desc&page=$currentPage"
             val json = webClient.httpGet(url).parseJson()
 
-            val chaptersArray = json.getJSONArray("chapters")
+            val chaptersArray = json.optJSONArray("chapters") ?: break
             for (i in 0 until chaptersArray.length()) {
-                val chapter = chaptersArray.getJSONObject(i)
+                val chapter = chaptersArray.optJSONObject(i) ?: continue
                 allChapters.add(parseChapter(chapter, mangaId))
             }
 
