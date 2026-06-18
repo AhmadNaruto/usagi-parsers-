@@ -11,9 +11,9 @@ import org.koitharu.kotatsu.parsers.util.*
 import java.text.SimpleDateFormat
 import java.util.*
 
-@MangaSourceParser("ATSUMARU", "Atsumaru", "en")
+@MangaSourceParser("ATSUMARUMOE", "Atsumaru", "en")
 internal class Atsumaru(context: MangaLoaderContext) :
-    PagedMangaParser(context, MangaParserSource.ATSUMARU, pageSize = 24) {
+    PagedMangaParser(context, MangaParserSource.ATSUMARUMOE, pageSize = 24) {
 
     override val configKeyDomain = ConfigKey.Domain("atsu.moe")
     private val apiUrl = "https://$domain/api/"
