@@ -11,9 +11,9 @@ import org.koitharu.kotatsu.parsers.util.*
 import java.text.SimpleDateFormat
 import java.util.*
 
-@MangaSourceParser("ATSUMARUMOE", "Atsumaru", "en")
-internal class ATSUMARUMOE(context: MangaLoaderContext) :
-    PagedMangaParser(context, MangaParserSource.ATSUMARUMOE, pageSize = 24) {
+@MangaSourceParser("ATSUMOE", "Atsumaru", "en")
+internal class ATSUMOE(context: MangaLoaderContext) :
+    PagedMangaParser(context, MangaParserSource.ATSUMOE, pageSize = 24) {
 
     override val configKeyDomain = ConfigKey.Domain("atsu.moe")
     private val apiUrl = "https://$domain/api/"
@@ -169,7 +169,8 @@ internal class ATSUMARUMOE(context: MangaLoaderContext) :
             else -> manga.state
         }
 
-        val chapters = fetchAllChapters(mangaId)
+
+        val chapters = fetchAllChapters(mangaId, mangaPage)
 
         return manga.copy(
             title = title,
@@ -182,42 +183,68 @@ internal class ATSUMARUMOE(context: MangaLoaderContext) :
         )
     }
 
-    private suspend fun fetchAllChapters(mangaId: String): List<MangaChapter> {
+
+
+    private suspend fun fetchAllChapters(mangaId: String, mangaPage: JSONObject?): List<MangaChapter> {
+        val scanlators = mangaPage.parseScanlators()
+
         val allChapters = mutableListOf<MangaChapter>()
         var currentPage = 0
         var totalPages = 1
 
         while (currentPage < totalPages) {
+
             val url = "${apiUrl}manga/chapters?id=$mangaId&filter=all&sort=desc&page=$currentPage"
             val json = webClient.httpGet(url).parseJson()
 
             val chaptersArray = json.optJSONArray("chapters") ?: break
             for (i in 0 until chaptersArray.length()) {
                 val chapter = chaptersArray.optJSONObject(i) ?: continue
-                allChapters.add(parseChapter(chapter, mangaId))
+                allChapters.add(parseChapter(chapter, mangaId, scanlators))
             }
 
             totalPages = json.getInt("pages")
             currentPage++
         }
 
-        return allChapters.reversed()
+        return allChapters.reversed().mapChapterBranches()
     }
 
-    private fun parseChapter(json: JSONObject, mangaId: String): MangaChapter {
+    private fun JSONObject?.parseScanlators(): Map<String, String> {
+        val scanlatorsArray = this?.optJSONArray("scanlators") ?: return emptyMap()
+        return buildMap {
+            for (i in 0 until scanlatorsArray.length()) {
+                val scanlator = scanlatorsArray.optJSONObject(i) ?: continue
+                val id = scanlator.optString("id").takeIf { it.isNotEmpty() } ?: continue
+                val name = scanlator.optString("name").takeIf { it.isNotEmpty() } ?: continue
+                put(id, name)
+            }
+        }
+    }
+    
+
+    private fun parseChapter(
+        json: JSONObject,
+        mangaId: String,
+        scanlators: Map<String, String>,
+    ): MangaChapter {
         val chapterId = json.getString("id")
         val title = json.optString("title").takeIf { it.isNotEmpty() }
-        val number = json.optInt("number", 0).toFloat()
+        val number = json.optString("number").toFloatOrNull()
+            ?: json.optDouble("number", 0.0).toFloat()
+        val scanlator = scanlators[json.optString("scanlationMangaId")]
 
-        // Parse ISO date string to timestamp
-        val createdAtStr = json.optString("createdAt")
-        val uploadDate = if (createdAtStr.isNotEmpty()) {
-            try {
-                dateFormat.parse(createdAtStr)?.time ?: 0L
-            } catch (e: Exception) {
-                0L
+        val uploadDate = when (val createdAt = json.opt("createdAt")) {
+            is Number -> createdAt.toLong()
+            is String -> {
+                try {
+                    dateFormat.parse(createdAt)?.time ?: 0L
+                } catch (e: Exception) {
+                    0L
+                }
             }
-        } else 0L
+            else -> 0L
+        }
 
         return MangaChapter(
             id = generateUid("$mangaId/$chapterId"),
@@ -227,9 +254,36 @@ internal class ATSUMARUMOE(context: MangaLoaderContext) :
             url = "$mangaId/$chapterId",
             uploadDate = uploadDate,
             source = source,
-            scanlator = null,
-            branch = null
+            scanlator = scanlator,
+            branch = scanlator
         )
+    }
+
+    private fun List<MangaChapter>.mapChapterBranches(): List<MangaChapter> {
+        val usedBranches = HashMap<String, HashSet<Pair<Int, Float>>>()
+
+        return map { chapter ->
+
+            val baseBranch = "Group"
+
+            val branch = (1..Int.MAX_VALUE).first { number ->
+                val candidate = "$baseBranch $number"
+
+                val usedNumbers = usedBranches[candidate]
+
+                usedNumbers == null || chapter.volume to chapter.number !in usedNumbers
+            }.let { number ->
+                "$baseBranch $number"
+            }
+
+            usedBranches.getOrPut(branch, ::HashSet)
+                .add(chapter.volume to chapter.number)
+
+            chapter.copy(
+                scanlator = branch,
+                branch = branch
+            )
+        }
     }
 
     override suspend fun getPages(chapter: MangaChapter): List<MangaPage> {
