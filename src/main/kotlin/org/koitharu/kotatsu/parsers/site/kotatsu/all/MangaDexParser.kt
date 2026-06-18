@@ -40,7 +40,7 @@ private const val SERVER_DATA_SAVER = "data-saver"
 private const val USER_AGENT = "Usagi/1 (Android)"
 
 @MangaSourceParser("MANGADEX", "MangaDex")
-internal class MangaDex(context: MangaLoaderContext) : FlexibleMangaParser(context, MangaParserSource.MangaDex) {
+internal class MangaDexParser(context: MangaLoaderContext) : FlexibleMangaParser(context, MangaParserSource.MANGADEXPARSER) {
 
 	override val userAgentKey = ConfigKey.UserAgent(
 		USER_AGENT,
