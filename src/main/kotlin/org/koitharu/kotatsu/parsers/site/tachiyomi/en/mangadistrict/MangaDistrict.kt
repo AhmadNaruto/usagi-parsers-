@@ -69,14 +69,27 @@ class MangaDistrict :
     }
 
     override fun chapterListParse(response: Response): List<SChapter> {
-        val chapters = super.chapterListParse(response)
-        return when (getImgRes()) {
-            IMG_RES_HIGH -> chapters.filterNot { it.url.contains("/v2-full-quality") }
-            IMG_RES_FULL -> chapters.filterNot { it.url.contains("/v1-high-quality") }
-            else -> chapters
+        val chapters = when (getImgRes()) {
+            IMG_RES_HIGH -> super.chapterListParse(response)
+                .filterNot { it.url.contains("/v2-full-quality") }
+
+            IMG_RES_FULL -> super.chapterListParse(response)
+                .filterNot { it.url.contains("/v1-high-quality") }
+
+            else -> super.chapterListParse(response)
+        }
+
+        val allArePlainChapters = chapters.isNotEmpty() && chapters.all {
+            Regex("""^Chapter\s*\d+$""", RegexOption.IGNORE_CASE)
+                .matches(it.name.trim())
+        }
+
+        return if (allArePlainChapters) {
+            chapters.reversed()
+        } else {
+            chapters
         }
     }
-
     override fun chapterFromElement(element: Element): SChapter = super.chapterFromElement(element).apply {
         val urlKey = url.urlKey()
         val dates = preferences.dates
