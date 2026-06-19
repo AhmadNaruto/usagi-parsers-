@@ -1,6 +1,11 @@
 package org.koitharu.kotatsu.parsers.site.tachiyomi.en.readcomiconline
 
 import android.content.SharedPreferences
+import android.os.Handler
+import android.os.Looper
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import android.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
@@ -13,27 +18,27 @@ import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.HttpSource
 import eu.kanade.tachiyomi.util.asJsoup
+import org.koitharu.kotatsu.parsers.util.applicationContext
 import keiyoushi.utils.firstInstance
 import keiyoushi.utils.getPreferencesLazy
 import keiyoushi.utils.parseAs
 import keiyoushi.utils.tryParse
-import kotlinx.serialization.Serializable
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import org.jsoup.nodes.TextNode
-import rx.Observable
-import java.io.IOException
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Locale
-import android.util.Base64
 import org.koitharu.kotatsu.parsers.TachiyomiSource
-import java.net.URLDecoder
+import rx.Observable
+import java.text.SimpleDateFormat
+import java.util.Locale
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.collections.mapIndexed
 
 @TachiyomiSource("READCOMICONLINE", "Readcomiconline", "en")
 class Readcomiconline :
@@ -54,8 +59,13 @@ class Readcomiconline :
 
     override val supportsLatest = true
 
+    override fun headersBuilder() = super.headersBuilder()
+        .set("Referer", "$baseUrl/")
+
     override val client: OkHttpClient = network.client.newBuilder()
         .addNetworkInterceptor(::captchaInterceptor).build()
+
+    private val handler by lazy { Handler(Looper.getMainLooper()) }
 
     private fun captchaInterceptor(chain: Interceptor.Chain): Response {
         val request = chain.request()
@@ -254,199 +264,142 @@ class Readcomiconline :
         else -> SManga.UNKNOWN
     }
 
-    override fun chapterListParse(response: Response): List<SChapter> =
-        response.asJsoup().select("table.listing tr:gt(1)").map { element ->
-            SChapter.create().apply {
-                val urlElement = element.selectFirst("a")!!
-                setUrlWithoutDomain(urlElement.attr("href"))
-                name = urlElement.text()
-                date_upload = dateFormat.tryParse(element.selectFirst("td:eq(1)")?.text())
-            }
+    override fun chapterListParse(response: Response): List<SChapter> = response.asJsoup().select("table.listing tr:gt(1)").map { element ->
+        SChapter.create().apply {
+            val urlElement = element.selectFirst("a")!!
+            setUrlWithoutDomain(urlElement.attr("href"))
+            name = urlElement.text()
+            date_upload = dateFormat.tryParse(element.selectFirst("td:eq(1)")?.text())
         }
+    }
 
     private val dateFormat = SimpleDateFormat("MM/dd/yyyy", Locale.getDefault())
 
-    override fun pageListRequest(chapter: SChapter): Request {
+    override fun fetchPageList(chapter: SChapter): Observable<List<Page>> {
         val qualitySuffix = "&s=${serverPref()}&quality=${qualityPref()}&readType=1"
-        return GET(baseUrl + chapter.url + qualitySuffix, headers)
+        val chapterUrl = baseUrl + chapter.url + qualitySuffix
+
+        val chapterDoc = client.newCall(GET(chapterUrl, headers)).execute().asJsoup()
+        val totalImages = chapterDoc.select("#divImage img").size
+
+        val images = decodeImagesWv(chapterDoc, totalImages)
+            .mapIndexed { i, url ->
+                Page(i, imageUrl = url)
+            }
+
+        return Observable.just(images)
     }
 
-    override fun pageListParse(response: Response): List<Page> {
-        val document = response.asJsoup()
-        val useSecondServer = serverPref() == "s2"
+    private val bridgeName = "bridge_" + ('a'..'z').shuffled().take(10).joinToString("")
 
-        if (remoteConfigItem == null) {
-            throw IOException("Failed to retrieve configuration")
+    private class ImageBridge(
+        private val callback: (String) -> Unit,
+    ) {
+        @Suppress("unused")
+        fun onImagesExtracted(payload: String) {
+            callback(payload)
         }
+    }
 
-        // Combine all js scripts (so baeu() URL detection and link extraction see the same content)
-        // baeu() is function call in the source code that sometimes contain a custom URL for the base URL for images
-        // in that case we bypass choosing server1 or server2 base URLs and use the custom URL instead
-        val combinedScripts = document.select("script").joinToString("\n") { it.data().trimIndent() }
+    fun decodeImagesWv(chapterDoc: Document, totalImages: Int): List<String> {
+        var innerWv: WebView? = null
+        val latch = CountDownLatch(1)
+        var jsonResult = ""
 
-        val encryptedLinks = decryptImageLinks(
-            encryptedString = combinedScripts,
-            useSecondServer = useSecondServer,
-        )
+        handler.post {
+            innerWv = WebView(applicationContext).apply {
+                settings.loadsImagesAutomatically = false
+                settings.blockNetworkImage = true
+                settings.javaScriptEnabled = true
+                settings.userAgentString = headers["User-Agent"]
 
-        return encryptedLinks.mapIndexedNotNull { idx, url ->
-            if (!remoteConfigItem!!.shouldVerifyLinks) {
-                Page(idx, imageUrl = url)
-            } else {
-                val request = Request.Builder().url(url).head().build()
+                setWebViewClient(object : WebViewClient() {
 
-                client.newCall(request).execute().use {
-                    if (it.isSuccessful) {
-                        Page(idx, imageUrl = url)
-                    } else {
-                        null // Remove from list
+                    @Suppress("DEPRECATION")
+                    override fun shouldInterceptRequest(
+                        view: WebView?,
+                        url: String?,
+                    ): WebResourceResponse? {
+                        if (url == null) return null
+
+                        return if (
+                            url.contains(".js") ||
+                            url.startsWith("data:")
+                        ) {
+                            null
+                        } else {
+                            WebResourceResponse(
+                                "text/plain",
+                                "utf-8",
+                                null
+                            )
+                        }
                     }
-                }
+                })
+
+                addJavascriptInterface(
+                    ImageBridge { payload ->
+                        jsonResult = payload
+                        latch.countDown()
+                    },
+                    bridgeName
+                )
             }
-        }
-    }
 
-    private fun decryptImageLinks(
-        encryptedString: String,
-        useSecondServer: Boolean,
-    ): MutableList<String> {
-        val pageLinks = mutableListOf<String>()
-        val replaceMatch = replacePatternRegex.find(encryptedString)
-        val obfuscationPattern = replaceMatch?.groupValues?.get(1)?.let { Regex(it) } ?: defaultObfuscationRegex
-        val replacementChar = replaceMatch?.groupValues?.get(2) ?: "e"
-        val detectedBaseUrl = baseUrlRegex.find(encryptedString)?.groupValues?.get(1)
+            chapterDoc.select("script[defer]").remove()
 
-        val arrayVars = arrayVarRegex.findAll(encryptedString)
-            .map { it.groupValues[1] }
-            .toList()
+            chapterDoc.body().append(
+                """
+            <script>
+            (function() {
+                var resolved = new Set();
 
-        for (arrayVar in arrayVars) {
-            val callRegex = Regex(
-                """\w+\s*\([^)]*\b${Regex.escape(arrayVar)}\b[^)]*,\s*["']([^"']{20,})["'][,\s]*\)""",
+                function sendFinal() {
+                    var imgs = document.querySelectorAll('#divImage img');
+
+                    for (var i = 0; i < imgs.length; i++) {
+                        resolved.add(imgs[i].src);
+                    }
+
+                    $bridgeName.onImagesExtracted(
+                        JSON.stringify(Array.from(resolved))
+                    );
+                }
+
+                setTimeout(function() {
+                    LoadNextPages($totalImages);
+                    setTimeout(sendFinal, 500);
+                }, 300);
+            })();
+            </script>
+            """.trimIndent()
             )
-            val matches = callRegex.findAll(encryptedString).toList()
 
-            if (matches.isEmpty()) {
-                continue
-            }
-
-            val rawLinks = matches.map { it.groupValues[1] }
-            val prefixOffset = findPrefixOffset(rawLinks)
-
-            for (match in matches) {
-                val rawLink = match.groupValues[1]
-                if (rawLink.isNotEmpty()) {
-                    pageLinks += decryptLink(
-                        rawLink = rawLink,
-                        prefixOffset = prefixOffset,
-                        obfuscationPattern = obfuscationPattern,
-                        replacementChar = replacementChar,
-                        detectedBaseUrl = detectedBaseUrl,
-                        useSecondServer = useSecondServer,
-                    )
-                }
-            }
+            innerWv?.loadDataWithBaseURL(
+                chapterDoc.location(),
+                chapterDoc.outerHtml(),
+                "text/html",
+                "UTF-8",
+                null
+            )
         }
 
-        return getCleanedLinks(pageLinks).toMutableList()
+        return try {
+            if (!latch.await(8, TimeUnit.SECONDS) || jsonResult.isEmpty()) {
+                error("Url decoding timed out, try again")
+            }
+
+            jsonResult.parseAs<List<String>>()
+
+        } finally {
+            handler.post {
+                innerWv?.stopLoading()
+                innerWv?.destroy()
+            }
+        }
     }
 
-    private fun findPrefixOffset(values: List<String>): Int {
-        if (values.isEmpty()) {
-            return 0
-        }
-
-        val first = values.first()
-        var samePrefixCount = 0
-
-        for (index in first.indices) {
-            val char = first[index]
-            if (values.all { it.length > index && it[index] == char }) {
-                samePrefixCount++
-                if (samePrefixCount >= 5 && first.substring(samePrefixCount - 5, samePrefixCount) == "https") {
-                    return samePrefixCount - 5
-                }
-            } else {
-                break
-            }
-        }
-
-        return 0
-    }
-
-    private fun decryptLink(
-        rawLink: String,
-        prefixOffset: Int = 0,
-        obfuscationPattern: Regex,
-        replacementChar: String,
-        detectedBaseUrl: String?,
-        useSecondServer: Boolean,
-    ): String {
-        var link = rawLink
-            .replace(obfuscationPattern, replacementChar)
-            .replace("pw_.g28x", "b")
-            .replace("d2pr.x_27", "h")
-
-        if (prefixOffset != 0) {
-            link = link.substring(prefixOffset)
-        }
-
-        if (link.endsWith("=s0") || link.endsWith("=s1600")) {
-            link = link.replace("https://2.bp.blogspot.com/", "") + "?"
-        }
-
-        if (!link.startsWith("https")) {
-            val queryIndex = link.indexOf("?")
-            val query = link.substring(queryIndex)
-            val isS0 = link.contains("=s0?")
-            val sizeIndex = if (isS0) {
-                link.indexOf("=s0?")
-            } else {
-                link.indexOf("=s1600?")
-            }
-
-            var encodedPath = link.substring(0, sizeIndex)
-            encodedPath = encodedPath.substring(15, 33) + encodedPath.substring(50)
-
-            val encodedPathLength = encodedPath.length
-            encodedPath = encodedPath.substring(0, encodedPathLength - 11) +
-                    encodedPath[encodedPathLength - 2] +
-                    encodedPath[encodedPathLength - 1]
-
-            val decodedBytes = Base64.decode(encodedPath, Base64.DEFAULT)
-            var decodedPath = URLDecoder.decode(String(decodedBytes), "UTF-8")
-
-            decodedPath = decodedPath.substring(0, 13) + decodedPath.substring(17)
-            decodedPath = decodedPath.substring(0, decodedPath.length - 2) + if (isS0) "=s0" else "=s1600"
-
-            val baseUrl = detectedBaseUrl ?: if (useSecondServer) {
-                "https://ano1.rconet.biz/pic"
-            } else {
-                "https://2.bp.blogspot.com"
-            }
-
-            link = "$baseUrl/$decodedPath$query${if (useSecondServer) "&t=10" else ""}"
-        }
-
-        return link
-    }
-
-    private fun getCleanedLinks(pageLinks: List<String>): List<String> {
-        val seen = mutableSetOf<String>()
-
-        return pageLinks.filter { link ->
-            if (link.isEmpty()) {
-                return@filter false
-            }
-
-            val cleanLink = link.substringBefore("?").substringBefore("=")
-            val isUnique = seen.add(cleanLink)
-            val isNotBlocked = cleanLink !in blocklist
-            val isValidUrl = urlRegex.matches(cleanLink)
-
-            isUnique && isNotBlocked && isValidUrl
-        }
-    }
+    override fun pageListParse(response: Response): List<Page> = throw UnsupportedOperationException("Not used")
 
     override fun imageUrlParse(response: Response) = throw UnsupportedOperationException()
 
@@ -459,7 +412,6 @@ class Readcomiconline :
                 Pair("Ongoing", "Ongoing"),
             ),
         )
-
     private class Genre(name: String, val gid: String) : Filter.TriState(name)
     private class GenreList(genres: List<Genre>) : Filter.Group<Genre>("Genres", genres) {
         val included: List<String>
@@ -565,7 +517,7 @@ class Readcomiconline :
     // Preferences Code
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
-        ListPreference(screen.context).apply {
+        val mirrorPref = ListPreference(screen.context).apply {
             key = MIRROR_PREF
             title = MIRROR_PREF_TITLE
             entries = MIRROR_NAMES
@@ -574,7 +526,7 @@ class Readcomiconline :
             summary = "%s"
         }
 
-        ListPreference(screen.context).apply {
+        val qualityPref = ListPreference(screen.context).apply {
             key = QUALITY_PREF
             title = QUALITY_PREF_TITLE
             entries = arrayOf("High Quality", "Low Quality")
@@ -582,7 +534,7 @@ class Readcomiconline :
             summary = "%s"
         }
 
-        ListPreference(screen.context).apply {
+        val serverPref = ListPreference(screen.context).apply {
             key = SERVER_PREF
             title = SERVER_PREF_TITLE
             entries = arrayOf("Server 1", "Server 2")
@@ -595,34 +547,6 @@ class Readcomiconline :
 
     private fun serverPref() = preferences.getString(SERVER_PREF, "")
 
-    private var remoteConfigItem: RemoteConfigDTO? = null
-        get() {
-            if (field != null) {
-                return field
-            }
-
-            val configLink = IMAGE_REMOTE_CONFIG_DEFAULT.addBustQuery()
-
-            try {
-                val configResponse = client.newCall(GET(configLink)).execute()
-
-                field = configResponse.parseAs<RemoteConfigDTO>()
-                configResponse.close()
-                return field
-            } catch (_: IOException) {
-                return null
-            }
-        }
-
-    private fun String.addBustQuery(): String = "$this?bust=${Calendar.getInstance().time.time}"
-
-    @Serializable
-    private class RemoteConfigDTO(
-        val imageDecryptEval: String,
-        val postDecryptEval: String?,
-        val shouldVerifyLinks: Boolean,
-    )
-
     companion object {
         private const val QUALITY_PREF_TITLE = "Image Quality Selector"
         private const val QUALITY_PREF = "qualitypref"
@@ -632,25 +556,5 @@ class Readcomiconline :
         private const val MIRROR_PREF = "mirrorpref"
         private val MIRROR_NAMES = arrayOf("readcomiconline.li", "rcostation.xyz")
         private val MIRROR_URLS = arrayOf("https://readcomiconline.li", "https://rcostation.xyz")
-        private const val IMAGE_REMOTE_CONFIG_DEFAULT =
-            "https://raw.githubusercontent.com/keiyoushi/extensions-source/refs/heads/main/src/en/readcomiconline/config.json"
-
-        private val urlRegex = Regex(
-            """^https?://(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)+\b(?:[/a-z0-9\-._~:?#@!$&'()*+,;=%]*)$""",
-            RegexOption.IGNORE_CASE,
-        )
-        private val replacePatternRegex = Regex("""\.replace\(\s*/(\w+__\w+_)/g\s*,\s*['"](\w)['"]\s*\)""")
-        private val defaultObfuscationRegex = Regex("""\w{2}__\w{6}_""")
-        private val arrayVarRegex = Regex("""var\s+(\w+)\s*=\s*new\s+Array\(\)\s*;""")
-        private val baseUrlRegex = Regex("""baeu\(\w+,\s*["'](https?://[^"']+)["']\)""")
-
-        private val blocklist = setOf(
-            "https://2.bp.blogspot.com/pw/AP1GczP6zCVVfdmN6OoVnm7CLvEfmHMUawyEwJWouX9C6SHwsiuYfLkUr9FsM6Zo34qNzPKeQeahBx9ckBZJQckiJmX1UwKD7uh900yz5rKyG4zT2rfIrqFviEJIev1Pg_pGRuSG57rIH6BDwGCTmiE4MjA",
-            "https://2.bp.blogspot.com/pw/AP1GczP48thKMga7cud0tjtHtYqsvZzhYY0HyAxVzM3O1D6tkLbi0fT9NDZFFFH69hNnoGsnqJSEIh4mmpEoU1BJSfNXIz1f5aLXl41RM9os7ePn7ipbrYbIuqiQxAV0hhJZrNLl7FmauwLQ01paCrP6KAE",
-            "https://2.bp.blogspot.com/pw/AP1GczNXprTMfAP2AHFFWvCbKq6qReXrqSohz87KeBjV0nh6XoLsE1NpzL7Rp9llxoY208IPARiIDON_TO6dZB0ZMNeB8J7xzUzbS9h6To7aGpOZshFofw-wFQ0KJ3y3wolSwzLrduZZ_0w8_6gGuTEB-98",
-            "https://2.bp.blogspot.com/pw/AP1GczMVY_zWeag2n981CRX7jaZ73Sr0NtidtJhnvJ3-Rmh2fIo-PoQRI0ZksQEbpTjDHgBeNYbQ2hQodsY-Dv0FXUhiU_mus5z5L5lMVAH82kXYqOd2IEw",
-            "https://2.bp.blogspot.com/pw/AP1GczOKY-6EDGVvlQGB2wj0xxB5JgcyiujFJC3CHgwqBOLIidwmoP6DLiMpX__Fw6MMPvLezN6soeV0A8pKSHUrC4rxZyO5vov40g1g4ipZdkFlzUouAFA",
-            "https://2.bp.blogspot.com/pw/AP1GczO8AETT3k19nhJwxHm0sHCSy0tXyhSOYxnq3EUrmlvgY5yPqDaxcd1XZ7reQKH-lKgpGK4o3sW_9Yu6feqii79riXN3Ghi8Xs1S5Z4wi-aeHrq5PzOX",
-        )
     }
 }
